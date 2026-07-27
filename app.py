@@ -10,7 +10,6 @@ import PyPDF2
 from docx import Document
 from openpyxl import Workbook, load_workbook
 import pdf2docx
-import tabula
 import pandas as pd
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.pdfgen import canvas
@@ -94,46 +93,19 @@ def pdf_to_excel():
     temp_output.close()
     
     try:
-        # Ekstrak tabel dengan tabula
-        try:
-            dfs = tabula.read_pdf(temp_input.name, pages='all', multiple_tables=True)
-            
-            if not dfs:
-                # Fallback: ekstrak teks biasa
-                pdf_reader = PyPDF2.PdfReader(temp_input.name)
-                text = ''
-                for page in pdf_reader.pages:
-                    text += page.extract_text()
-                
-                # Ubah teks ke excel
-                wb = Workbook()
-                ws = wb.active
-                lines = text.split('\n')
-                for i, line in enumerate(lines):
-                    if line.strip():
-                        ws.cell(row=i+1, column=1, value=line.strip())
-            else:
-                # Buat Excel dari tabel
-                wb = Workbook()
-                for i, df in enumerate(dfs):
-                    if i == 0:
-                        ws = wb.active
-                        ws.title = f'Table_{i+1}'
-                    else:
-                        ws = wb.create_sheet(f'Table_{i+1}')
-                    
-                    # Tulis header & data
-                    for col, header in enumerate(df.columns, 1):
-                        ws.cell(row=1, column=col, value=str(header))
-                    
-                    for row_idx, row in enumerate(df.values, 2):
-                        for col_idx, val in enumerate(row, 1):
-                            ws.cell(row=row_idx, column=col_idx, value=str(val) if pd.notna(val) else '')
-        except:
-            # Ultra fallback
-            wb = Workbook()
-            ws = wb.active
-            ws.cell(row=1, column=1, value='Terjadi error ekstraksi, silakan coba file lain')
+        # Ekstrak teks dari PDF pake PyPDF2
+        pdf_reader = PyPDF2.PdfReader(temp_input.name)
+        text = ''
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+        
+        # Buat Excel dari teks
+        wb = Workbook()
+        ws = wb.active
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if line.strip():
+                ws.cell(row=i+1, column=1, value=line.strip())
         
         wb.save(temp_output.name)
         
