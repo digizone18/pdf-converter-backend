@@ -2,27 +2,19 @@ from flask import Flask, request, send_file, jsonify
 from flask_cors import CORS
 import os
 import tempfile
-import subprocess
-import json
-
-# Library konversi
 import PyPDF2
 from docx import Document
 from openpyxl import Workbook, load_workbook
 import pdf2docx
-import pandas as pd
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import inch
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib import colors
 import io
 
 app = Flask(__name__)
 CORS(app)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
-app.config['UPLOAD_FOLDER'] = '/tmp'
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 # ============ PDF TO WORD ============
 @app.route('/convert/pdf-to-word', methods=['POST'])
@@ -31,10 +23,6 @@ def pdf_to_word():
         return jsonify({'error': 'No file uploaded'}), 400
     
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'Empty filename'}), 400
-    
-    # Save temp file
     temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
     file.save(temp_input.name)
     temp_input.close()
@@ -43,28 +31,19 @@ def pdf_to_word():
     temp_output.close()
     
     try:
-        # Method 1: pake pdf2docx (lebih akurat)
-        try:
-            converter = pdf2docx.Converter(temp_input.name)
-            converter.convert(temp_output.name, start=0, end=None)
-            converter.close()
-            result_file = temp_output.name
-        except:
-            # Method 2: fallback ke PyPDF2 (cuma teks)
-            pdf_reader = PyPDF2.PdfReader(temp_input.name)
-            doc = Document()
-            
-            for page in pdf_reader.pages:
-                text = page.extract_text()
-                if text:
-                    doc.add_paragraph(text)
-                doc.add_page_break()
-            
-            doc.save(temp_output.name)
-            result_file = temp_output.name
+        pdf_reader = PyPDF2.PdfReader(temp_input.name)
+        doc = Document()
+        
+        for page in pdf_reader.pages:
+            text = page.extract_text()
+            if text:
+                doc.add_paragraph(text)
+            doc.add_page_break()
+        
+        doc.save(temp_output.name)
         
         return send_file(
-            result_file,
+            temp_output.name,
             as_attachment=True,
             download_name='output.docx',
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -93,13 +72,11 @@ def pdf_to_excel():
     temp_output.close()
     
     try:
-        # Ekstrak teks dari PDF pake PyPDF2
         pdf_reader = PyPDF2.PdfReader(temp_input.name)
         text = ''
         for page in pdf_reader.pages:
             text += page.extract_text()
         
-        # Buat Excel dari teks
         wb = Workbook()
         ws = wb.active
         lines = text.split('\n')
@@ -139,44 +116,15 @@ def word_to_pdf():
     temp_output.close()
     
     try:
-        # Baca DOCX
         doc = Document(temp_input.name)
-        
-        # Buat PDF dengan ReportLab
         doc_pdf = SimpleDocTemplate(temp_output.name, pagesize=A4)
         styles = getSampleStyleSheet()
         story = []
         
-        # Tambah semua paragraf
         for para in doc.paragraphs:
             if para.text.strip():
                 story.append(Paragraph(para.text, styles['Normal']))
                 story.append(Spacer(1, 12))
-        
-        # Tambah tabel kalo ada
-        for table in doc.tables:
-            data = []
-            for row in table.rows:
-                row_data = []
-                for cell in row.cells:
-                    row_data.append(cell.text)
-                data.append(row_data)
-            
-            if data:
-                from reportlab.platypus import Table, TableStyle
-                t = Table(data)
-                t.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 14),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
-                ]))
-                story.append(t)
-                story.append(Spacer(1, 20))
         
         doc_pdf.build(story)
         
@@ -210,25 +158,20 @@ def excel_to_pdf():
     temp_output.close()
     
     try:
-        # Baca Excel
         wb = load_workbook(temp_input.name)
         ws = wb.active
         
-        # Buat PDF
         doc_pdf = SimpleDocTemplate(temp_output.name, pagesize=A4)
         styles = getSampleStyleSheet()
         story = []
         
-        # Ambil semua data
         data = []
         for row in ws.iter_rows(values_only=True):
             row_data = [str(cell) if cell is not None else '' for cell in row]
             if any(row_data):
                 data.append(row_data)
         
-        # Buat tabel
         if data:
-            from reportlab.platypus import Table, TableStyle
             t = Table(data)
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
